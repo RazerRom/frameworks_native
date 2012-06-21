@@ -1536,6 +1536,212 @@ EGLint eglWaitSyncKHR(EGLDisplay dpy, EGLSyncKHR sync, EGLint flags) {
     return result;
 }
 
+EGLStreamKHR eglCreateStreamKHR(EGLDisplay dpy, const EGLint *attrib_list)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_NO_STREAM_KHR;
+
+    EGLStreamKHR result = EGL_NO_STREAM_KHR;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglCreateStreamKHR) {
+        result = cnx->egl.eglCreateStreamKHR(
+                dp->disp.dpy, attrib_list);
+    }
+    return result;
+}
+
+EGLBoolean eglDestroyStreamKHR(EGLDisplay dpy, EGLStreamKHR stream)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_FALSE;
+
+    EGLBoolean result = EGL_FALSE;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglDestroyStreamKHR) {
+        result = cnx->egl.eglDestroyStreamKHR(
+                dp->disp.dpy, stream);
+    }
+    return result;
+}
+
+EGLBoolean eglStreamAttribKHR(EGLDisplay dpy, EGLStreamKHR stream,
+        EGLenum attribute, EGLint value)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_FALSE;
+
+    EGLBoolean result = EGL_FALSE;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglStreamAttribKHR) {
+        result = cnx->egl.eglStreamAttribKHR(
+                dp->disp.dpy, stream, attribute, value);
+    }
+    return result;
+}
+
+EGLBoolean eglQueryStreamKHR(EGLDisplay dpy, EGLStreamKHR stream,
+        EGLenum attribute, EGLint *value)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_FALSE;
+
+    EGLBoolean result = EGL_FALSE;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglQueryStreamKHR) {
+        result = cnx->egl.eglQueryStreamKHR(
+                dp->disp.dpy, stream, attribute, value);
+    }
+    return result;
+}
+
+EGLBoolean eglQueryStreamu64KHR(EGLDisplay dpy, EGLStreamKHR stream,
+        EGLenum attribute, EGLuint64KHR *value)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_FALSE;
+
+    EGLBoolean result = EGL_FALSE;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglQueryStreamu64KHR) {
+        result = cnx->egl.eglQueryStreamu64KHR(
+                dp->disp.dpy, stream, attribute, value);
+    }
+    return result;
+}
+
+EGLBoolean eglQueryStreamTimeKHR(EGLDisplay dpy, EGLStreamKHR stream,
+        EGLenum attribute, EGLTimeKHR *value)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_FALSE;
+
+    EGLBoolean result = EGL_FALSE;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglQueryStreamTimeKHR) {
+        result = cnx->egl.eglQueryStreamTimeKHR(
+                dp->disp.dpy, stream, attribute, value);
+    }
+    return result;
+}
+
+EGLSurface eglCreateStreamProducerSurfaceKHR(EGLDisplay dpy, EGLConfig config,
+        EGLStreamKHR stream, const EGLint *attrib_list)
+{
+    clearError();
+
+    egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_NO_SURFACE;
+
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglCreateStreamProducerSurfaceKHR) {
+        EGLSurface surface = cnx->egl.eglCreateStreamProducerSurfaceKHR(
+                dp->disp.dpy, config, stream, attrib_list);
+        if (surface != EGL_NO_SURFACE) {
+            egl_surface_t* s = new egl_surface_t(dp.get(), config, NULL,
+                    surface, cnx);
+            return s;
+        }
+    }
+    return EGL_NO_SURFACE;
+}
+
+EGLBoolean eglStreamConsumerGLTextureExternalKHR(EGLDisplay dpy,
+        EGLStreamKHR stream)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_FALSE;
+
+    EGLBoolean result = EGL_FALSE;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglStreamConsumerGLTextureExternalKHR) {
+        result = cnx->egl.eglStreamConsumerGLTextureExternalKHR(
+                dp->disp.dpy, stream);
+    }
+    return result;
+}
+
+EGLBoolean eglStreamConsumerAcquireKHR(EGLDisplay dpy,
+        EGLStreamKHR stream)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_FALSE;
+
+    EGLBoolean result = EGL_FALSE;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglStreamConsumerAcquireKHR) {
+        result = cnx->egl.eglStreamConsumerAcquireKHR(
+                dp->disp.dpy, stream);
+    }
+    return result;
+}
+
+EGLBoolean eglStreamConsumerReleaseKHR(EGLDisplay dpy,
+        EGLStreamKHR stream)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_FALSE;
+
+    EGLBoolean result = EGL_FALSE;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglStreamConsumerReleaseKHR) {
+        result = cnx->egl.eglStreamConsumerReleaseKHR(
+                dp->disp.dpy, stream);
+    }
+    return result;
+}
+
+EGLNativeFileDescriptorKHR eglGetStreamFileDescriptorKHR(
+        EGLDisplay dpy, EGLStreamKHR stream)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_NO_FILE_DESCRIPTOR_KHR;
+
+    EGLNativeFileDescriptorKHR result = EGL_NO_FILE_DESCRIPTOR_KHR;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglGetStreamFileDescriptorKHR) {
+        result = cnx->egl.eglGetStreamFileDescriptorKHR(
+                dp->disp.dpy, stream);
+    }
+    return result;
+}
+
+EGLStreamKHR eglCreateStreamFromFileDescriptorKHR(
+        EGLDisplay dpy, EGLNativeFileDescriptorKHR file_descriptor)
+{
+    clearError();
+
+    const egl_display_ptr dp = validate_display(dpy);
+    if (!dp) return EGL_NO_STREAM_KHR;
+
+    EGLStreamKHR result = EGL_NO_STREAM_KHR;
+    egl_connection_t* const cnx = &gEGLImpl;
+    if (cnx->dso && cnx->egl.eglCreateStreamFromFileDescriptorKHR) {
+        result = cnx->egl.eglCreateStreamFromFileDescriptorKHR(
+                dp->disp.dpy, file_descriptor);
+    }
+    return result;
+}
+
 // ----------------------------------------------------------------------------
 // ANDROID extensions
 // ----------------------------------------------------------------------------
