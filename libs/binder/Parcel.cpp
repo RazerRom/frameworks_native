@@ -1047,7 +1047,7 @@ int64_t Parcel::readInt64() const
 
 
 #ifdef NEEDS_LGE_RIL_SYMBOLS
-status_t Parcel::readuInt64(unsigned long long *pArg) const
+status_t Parcel::readuInt64(uint64_t *pArg) const
 {
     return readAligned(pArg);
 }

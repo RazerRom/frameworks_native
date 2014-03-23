@@ -155,7 +155,7 @@ public:
     int64_t             readInt64() const;
     status_t            readInt64(int64_t *pArg) const;
 #ifdef NEEDS_LGE_RIL_SYMBOLS
-    status_t            readuInt64(unsigned long long *pArg) const;
+    status_t            readuInt64(uint64_t *pArg) const;
 #endif
     float               readFloat() const;
     status_t            readFloat(float *pArg) const;
