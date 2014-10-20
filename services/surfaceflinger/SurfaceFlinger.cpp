@@ -2150,11 +2150,9 @@ void SurfaceFlinger::doDisplayComposition(const sp<const DisplayDevice>& hw,
         if (mDaltonize) {
             colorMatrix = colorMatrix * mDaltonizer();
         }
-        // Update Viewport to avoid resolution mismatch between two or more display devices.
-        hw->setViewportAndProjection();
-        engine.beginGroup(colorMatrix);
+        mat4 oldMatrix = engine.setupColorTransform(colorMatrix);
         doComposeSurfaces(hw, dirtyRegion);
-        engine.endGroup();
+        engine.setupColorTransform(oldMatrix);
     }
 
     // update the swap region and clear the dirty region
