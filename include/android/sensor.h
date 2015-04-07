@@ -301,6 +301,11 @@ int ASensor_getType(ASensor const* sensor);
 float ASensor_getResolution(ASensor const* sensor);
 
 /*
+ * Returns this sensors's maximum range value.
+ */
+float ASensor_getMaxValue(ASensor const* sensor);
+
+/*
  * Returns the minimum delay allowed between events in microseconds.
  * A value of zero means that this sensor doesn't report events at a
  * constant rate, but rather only when a new data is available.
