@@ -2146,6 +2146,8 @@ void SurfaceFlinger::doDisplayComposition(const sp<const DisplayDevice>& hw,
         if (mDaltonize) {
             colorMatrix = colorMatrix * mDaltonizer();
         }
+        // Update Viewport to avoid resolution mismatch between two or more display devices.
+        hw->setViewportAndProjection();
         engine.beginGroup(colorMatrix);
         doComposeSurfaces(hw, dirtyRegion);
         engine.endGroup();
