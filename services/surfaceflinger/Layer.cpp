@@ -1092,7 +1092,7 @@ uint32_t Layer::doTransaction(uint32_t flags) {
         const bool resizePending = (c.requested.w != c.active.w) ||
                                    (c.requested.h != c.active.h);
 
-        if (resizePending) {
+        if (resizePending && mSidebandStream == NULL) {
             // don't let Layer::doTransaction update the drawing state
             // if we have a pending resize, unless we are in fixed-size mode.
             // the drawing state will be updated only once we receive a buffer
@@ -1101,6 +1101,10 @@ uint32_t Layer::doTransaction(uint32_t flags) {
             // in particular, we want to make sure the clip (which is part
             // of the geometry state) is latched together with the size but is
             // latched immediately when no resizing is involved.
+            //
+            // If a sideband stream is attached, however, we want to skip this
+            // optimization so that transactions aren't missed when a buffer
+            // never arrives
 
             flags |= eDontUpdateGeometryState;
         }
@@ -1287,6 +1291,10 @@ Region Layer::latchBuffer(bool& recomputeVisibleRegions)
     if (android_atomic_acquire_cas(true, false, &mSidebandStreamChanged) == 0) {
         // mSidebandStreamChanged was true
         mSidebandStream = mSurfaceFlingerConsumer->getSidebandStream();
+        if (mSidebandStream != NULL) {
+            setTransactionFlags(eTransactionNeeded);
+            mFlinger->setTransactionFlags(eTraversalNeeded);
+        }
         recomputeVisibleRegions = true;
 
         const State& s(getDrawingState());
@@ -1426,11 +1434,27 @@ Region Layer::latchBuffer(bool& recomputeVisibleRegions)
             // layer update so we check again at the next opportunity.
             mFlinger->signalLayerUpdate();
             return outDirtyRegion;
+        } else if (updateResult == SurfaceFlingerConsumer::BUFFER_REJECTED) {
+            // If the buffer has been rejected, remove it from the shadow queue
+            // and return early
+            mQueueItems.removeAt(0);
+            android_atomic_dec(&mQueuedFrames);
+            return outDirtyRegion;
         }
 
-        // Remove this buffer from our internal queue tracker
         { // Autolock scope
+            auto currentFrameNumber = mSurfaceFlingerConsumer->getFrameNumber();
+
             Mutex::Autolock lock(mQueueItemLock);
+
+            // Remove any stale buffers that have been dropped during
+            // updateTexImage
+            while (mQueueItems[0].mFrameNumber != currentFrameNumber) {
+                mQueueItems.removeAt(0);
+                android_atomic_dec(&mQueuedFrames);
+            }
+
+            // Remove this buffer from our internal queue tracker
             mQueueItems.removeAt(0);
         }
 

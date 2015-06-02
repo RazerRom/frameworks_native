@@ -53,6 +53,12 @@ static const char* native_processes_to_dump[] = {
         NULL,
 };
 
+static uint64_t nanotime() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * NANOS_PER_SEC + ts.tv_nsec;
+}
+
 void for_each_userid(void (*func)(int), const char *header) {
     DIR *d;
     struct dirent *de;
@@ -98,7 +104,7 @@ static void __for_each_pid(void (*helper)(int, const char *, void *), const char
 
         sprintf(cmdpath,"/proc/%d/cmdline", pid);
         memset(cmdline, 0, sizeof(cmdline));
-        if ((fd = open(cmdpath, O_RDONLY)) < 0) {
+        if ((fd = TEMP_FAILURE_RETRY(open(cmdpath, O_RDONLY))) < 0) {
             strcpy(cmdline, "N/A");
         } else {
             read(fd, cmdline, sizeof(cmdline) - 1);
@@ -149,7 +155,7 @@ static void for_each_tid_helper(int pid, const char *cmdline, void *arg) {
 
         sprintf(commpath,"/proc/%d/comm", tid);
         memset(comm, 0, sizeof(comm));
-        if ((fd = open(commpath, O_RDONLY)) < 0) {
+        if ((fd = TEMP_FAILURE_RETRY(open(commpath, O_RDONLY))) < 0) {
             strcpy(comm, "N/A");
         } else {
             char *c;
@@ -180,7 +186,7 @@ void show_wchan(int pid, int tid, const char *name) {
     memset(buffer, 0, sizeof(buffer));
 
     sprintf(path, "/proc/%d/wchan", tid);
-    if ((fd = open(path, O_RDONLY)) < 0) {
+    if ((fd = TEMP_FAILURE_RETRY(open(path, O_RDONLY))) < 0) {
         printf("Failed to open '%s' (%s)\n", path, strerror(errno));
         return;
     }
@@ -261,22 +267,7 @@ void do_showmap(int pid, const char *name) {
     }
 }
 
-/* prints the contents of a file */
-int dump_file(const char *title, const char *path) {
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) {
-        int err = errno;
-        if (title) printf("------ %s (%s) ------\n", title, path);
-        printf("*** %s: %s\n", path, strerror(err));
-        if (title) printf("\n");
-        return -1;
-    }
-    return dump_file_from_fd(title, path, fd);
-}
-
-int dump_file_from_fd(const char *title, const char *path, int fd) {
-    char buffer[32768];
-
+static int _dump_file_from_fd(const char *title, const char *path, int fd) {
     if (title) printf("------ %s (%s", title, path);
 
     if (title) {
@@ -290,32 +281,126 @@ int dump_file_from_fd(const char *title, const char *path, int fd) {
         printf(") ------\n");
     }
 
-    int newline = 0;
-    for (;;) {
-        int ret = read(fd, buffer, sizeof(buffer));
-        if (ret > 0) {
-            newline = (buffer[ret - 1] == '\n');
-            ret = fwrite(buffer, ret, 1, stdout);
+    bool newline = false;
+    fd_set read_set;
+    struct timeval tm;
+    while (1) {
+        FD_ZERO(&read_set);
+        FD_SET(fd, &read_set);
+        /* Timeout if no data is read for 30 seconds. */
+        tm.tv_sec = 30;
+        tm.tv_usec = 0;
+        uint64_t elapsed = nanotime();
+        int ret = TEMP_FAILURE_RETRY(select(fd + 1, &read_set, NULL, NULL, &tm));
+        if (ret == -1) {
+            printf("*** %s: select failed: %s\n", path, strerror(errno));
+            newline = true;
+            break;
+        } else if (ret == 0) {
+            elapsed = nanotime() - elapsed;
+            printf("*** %s: Timed out after %.3fs\n", path,
+                   (float) elapsed / NANOS_PER_SEC);
+            newline = true;
+            break;
+        } else {
+            char buffer[65536];
+            ssize_t bytes_read = TEMP_FAILURE_RETRY(read(fd, buffer, sizeof(buffer)));
+            if (bytes_read > 0) {
+                fwrite(buffer, bytes_read, 1, stdout);
+                newline = (buffer[bytes_read-1] == '\n');
+            } else {
+                if (bytes_read == -1) {
+                    printf("*** %s: Failed to read from fd: %s", path, strerror(errno));
+                    newline = true;
+                }
+                break;
+            }
         }
-        if (ret <= 0) break;
     }
-    close(fd);
+    TEMP_FAILURE_RETRY(close(fd));
 
     if (!newline) printf("\n");
     if (title) printf("\n");
     return 0;
 }
 
-static int64_t nanotime() {
+/* prints the contents of a file */
+int dump_file(const char *title, const char *path) {
+    int fd = TEMP_FAILURE_RETRY(open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC));
+    if (fd < 0) {
+        int err = errno;
+        if (title) printf("------ %s (%s) ------\n", title, path);
+        printf("*** %s: %s\n", path, strerror(err));
+        if (title) printf("\n");
+        return -1;
+    }
+    return _dump_file_from_fd(title, path, fd);
+}
+
+/* fd must have been opened with the flag O_NONBLOCK. With this flag set,
+ * it's possible to avoid issues where opening the file itself can get
+ * stuck.
+ */
+int dump_file_from_fd(const char *title, const char *path, int fd) {
+    int flags = fcntl(fd, F_GETFL);
+    if (flags == -1) {
+        printf("*** %s: failed to get flags on fd %d: %s\n", path, fd, strerror(errno));
+        return -1;
+    } else if (!(flags & O_NONBLOCK)) {
+        printf("*** %s: fd must have O_NONBLOCK set.\n", path);
+        return -1;
+    }
+    return _dump_file_from_fd(title, path, fd);
+}
+
+bool waitpid_with_timeout(pid_t pid, int timeout_seconds, int* status) {
+    sigset_t child_mask, old_mask;
+    sigemptyset(&child_mask);
+    sigaddset(&child_mask, SIGCHLD);
+
+    if (sigprocmask(SIG_BLOCK, &child_mask, &old_mask) == -1) {
+        printf("*** sigprocmask failed: %s\n", strerror(errno));
+        return false;
+    }
+
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (int64_t)ts.tv_sec * NANOS_PER_SEC + ts.tv_nsec;
+    ts.tv_sec = timeout_seconds;
+    ts.tv_nsec = 0;
+    int ret = TEMP_FAILURE_RETRY(sigtimedwait(&child_mask, NULL, &ts));
+    int saved_errno = errno;
+    // Set the signals back the way they were.
+    if (sigprocmask(SIG_SETMASK, &old_mask, NULL) == -1) {
+        printf("*** sigprocmask failed: %s\n", strerror(errno));
+        if (ret == 0) {
+            return false;
+        }
+    }
+    if (ret == -1) {
+        errno = saved_errno;
+        if (errno == EAGAIN) {
+            errno = ETIMEDOUT;
+        } else {
+            printf("*** sigtimedwait failed: %s\n", strerror(errno));
+        }
+        return false;
+    }
+
+    pid_t child_pid = waitpid(pid, status, WNOHANG);
+    if (child_pid != pid) {
+        if (child_pid != -1) {
+            printf("*** Waiting for pid %d, got pid %d instead\n", pid, child_pid);
+        } else {
+            printf("*** waitpid failed: %s\n", strerror(errno));
+        }
+        return false;
+    }
+    return true;
 }
 
 /* forks a command and waits for it to finish */
 int run_command(const char *title, int timeout_seconds, const char *command, ...) {
     fflush(stdout);
-    int64_t start = nanotime();
+    uint64_t start = nanotime();
     pid_t pid = fork();
 
     /* handle error case */
@@ -371,28 +456,35 @@ int run_command(const char *title, int timeout_seconds, const char *command, ...
     }
 
     /* handle parent case */
-    for (;;) {
-        int status;
-        pid_t p = waitpid(pid, &status, WNOHANG);
-        int64_t elapsed = nanotime() - start;
-        if (p == pid) {
-            if (WIFSIGNALED(status)) {
-                printf("*** %s: Killed by signal %d\n", command, WTERMSIG(status));
-            } else if (WIFEXITED(status) && WEXITSTATUS(status) > 0) {
-                printf("*** %s: Exit code %d\n", command, WEXITSTATUS(status));
+    int status;
+    bool ret = waitpid_with_timeout(pid, timeout_seconds, &status);
+    uint64_t elapsed = nanotime() - start;
+    if (!ret) {
+        if (errno == ETIMEDOUT) {
+            printf("*** %s: Timed out after %.3fs (killing pid %d)\n", command,
+                   (float) elapsed / NANOS_PER_SEC, pid);
+        } else {
+            printf("*** %s: Error after %.4fs (killing pid %d)\n", command,
+                   (float) elapsed / NANOS_PER_SEC, pid);
+        }
+        kill(pid, SIGTERM);
+        if (!waitpid_with_timeout(pid, 5, NULL)) {
+            kill(pid, SIGKILL);
+            if (!waitpid_with_timeout(pid, 5, NULL)) {
+                printf("*** %s: Cannot kill %d even with SIGKILL.\n", command, pid);
             }
-            if (title) printf("[%s: %.3fs elapsed]\n\n", command, (float)elapsed / NANOS_PER_SEC);
-            return status;
         }
-
-        if (timeout_seconds && elapsed / NANOS_PER_SEC > timeout_seconds) {
-            printf("*** %s: Timed out after %.3fs (killing pid %d)\n", command, (float) elapsed / NANOS_PER_SEC, pid);
-            kill(pid, SIGTERM);
-            return -1;
-        }
-
-        usleep(100000);  // poll every 0.1 sec
+        return -1;
     }
+
+    if (WIFSIGNALED(status)) {
+        printf("*** %s: Killed by signal %d\n", command, WTERMSIG(status));
+    } else if (WIFEXITED(status) && WEXITSTATUS(status) > 0) {
+        printf("*** %s: Exit code %d\n", command, WEXITSTATUS(status));
+    }
+    if (title) printf("[%s: %.3fs elapsed]\n\n", command, (float)elapsed / NANOS_PER_SEC);
+
+    return status;
 }
 
 size_t num_props = 0;
@@ -562,7 +654,8 @@ const char *dump_traces() {
     }
 
     /* create a new, empty traces.txt file to receive stack dumps */
-    int fd = open(traces_path, O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW, 0666);  /* -rw-rw-rw- */
+    int fd = TEMP_FAILURE_RETRY(open(traces_path, O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW,
+                                     0666));  /* -rw-rw-rw- */
     if (fd < 0) {
         fprintf(stderr, "%s: %s\n", traces_path, strerror(errno));
         return NULL;
@@ -612,7 +705,7 @@ const char *dump_traces() {
         if (!strncmp(data, "/system/bin/app_process", strlen("/system/bin/app_process"))) {
             /* skip zygote -- it won't dump its stack anyway */
             snprintf(path, sizeof(path), "/proc/%d/cmdline", pid);
-            int cfd = open(path, O_RDONLY);
+            int cfd = TEMP_FAILURE_RETRY(open(path, O_RDONLY));
             len = read(cfd, data, sizeof(data) - 1);
             close(cfd);
             if (len <= 0) {
@@ -624,7 +717,7 @@ const char *dump_traces() {
             }
 
             ++dalvik_found;
-            int64_t start = nanotime();
+            uint64_t start = nanotime();
             if (kill(pid, SIGQUIT)) {
                 fprintf(stderr, "kill(%d, SIGQUIT): %s\n", pid, strerror(errno));
                 continue;
@@ -654,7 +747,7 @@ const char *dump_traces() {
                 fprintf(stderr, "lseek: %s\n", strerror(errno));
             } else {
                 static uint16_t timeout_failures = 0;
-                int64_t start = nanotime();
+                uint64_t start = nanotime();
 
                 /* If 3 backtrace dumps fail in a row, consider debuggerd dead. */
                 if (timeout_failures == 3) {

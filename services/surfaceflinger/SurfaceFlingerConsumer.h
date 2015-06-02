@@ -28,6 +28,8 @@ namespace android {
  */
 class SurfaceFlingerConsumer : public GLConsumer {
 public:
+    static const status_t BUFFER_REJECTED = UNKNOWN_ERROR + 8;
+
     struct ContentsChangedListener: public FrameAvailableListener {
         virtual void onSidebandStreamChanged() = 0;
     };

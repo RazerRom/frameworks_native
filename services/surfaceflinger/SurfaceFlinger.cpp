@@ -695,7 +695,11 @@ status_t SurfaceFlinger::getDisplayStats(const sp<IBinder>& display,
 }
 
 int SurfaceFlinger::getActiveConfig(const sp<IBinder>& display) {
-    return getDisplayDevice(display)->getActiveConfig();
+    sp<DisplayDevice> device(getDisplayDevice(display));
+    if (device != NULL) {
+        return device->getActiveConfig();
+    }
+    return BAD_VALUE;
 }
 
 void SurfaceFlinger::setActiveConfigInternal(const sp<DisplayDevice>& hw, int mode) {
@@ -2146,6 +2150,8 @@ void SurfaceFlinger::doDisplayComposition(const sp<const DisplayDevice>& hw,
         if (mDaltonize) {
             colorMatrix = colorMatrix * mDaltonizer();
         }
+        // Update Viewport to avoid resolution mismatch between two or more display devices.
+        hw->setViewportAndProjection();
         engine.beginGroup(colorMatrix);
         doComposeSurfaces(hw, dirtyRegion);
         engine.endGroup();
@@ -3305,7 +3311,7 @@ status_t SurfaceFlinger::onTransact(
             IPCThreadState* ipc = IPCThreadState::self();
             const int pid = ipc->getCallingPid();
             const int uid = ipc->getCallingUid();
-            if ((uid != AID_GRAPHICS) &&
+            if ((uid != AID_GRAPHICS && uid != AID_SYSTEM) &&
                     !PermissionCache::checkPermission(sAccessSurfaceFlinger, pid, uid)) {
                 ALOGE("Permission Denial: "
                         "can't access SurfaceFlinger pid=%d, uid=%d", pid, uid);

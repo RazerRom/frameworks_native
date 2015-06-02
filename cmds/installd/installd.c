@@ -421,47 +421,39 @@ int initialize_directories() {
         // Introducing multi-user, so migrate /data/media contents into /data/media/0
         ALOGD("Upgrading /data/media for multi-user");
 
-        // Ensure /data/media
-        if (fs_prepare_dir(android_media_dir.path, 0770, AID_MEDIA_RW, AID_MEDIA_RW) == -1) {
-            goto fail;
-        }
-
-        // /data/media.tmp
-        char media_tmp_dir[PATH_MAX];
-        snprintf(media_tmp_dir, PATH_MAX, "%smedia.tmp", android_data_dir.path);
-
-        // Only copy when upgrade not already in progress
-        if (access(media_tmp_dir, F_OK) == -1) {
-            if (rename(android_media_dir.path, media_tmp_dir) == -1) {
-                ALOGE("Failed to move legacy media path: %s", strerror(errno));
-                goto fail;
-            }
-        }
-
-        // Create /data/media again
-        if (fs_prepare_dir(android_media_dir.path, 0770, AID_MEDIA_RW, AID_MEDIA_RW) == -1) {
-            goto fail;
-        }
-
-        if (selinux_android_restorecon(android_media_dir.path, 0)) {
-            goto fail;
-        }
-
         // /data/media/0
         char owner_media_dir[PATH_MAX];
         snprintf(owner_media_dir, PATH_MAX, "%s0", android_media_dir.path);
+        if (fs_prepare_dir(owner_media_dir, 0770, AID_MEDIA_RW, AID_MEDIA_RW) == -1) {
+            goto fail;
+        }
 
         // Move any owner data into place
-        if (access(media_tmp_dir, F_OK) == 0) {
-            if (rename(media_tmp_dir, owner_media_dir) == -1) {
-                ALOGE("Failed to move owner media path: %s", strerror(errno));
-                goto fail;
+        DIR* dir;
+        struct dirent *dirent;
+
+        dir = opendir(user_data_dir);
+        if (dir != NULL) {
+            while ((dirent = readdir(dir))) {
+                if (strcmp(dirent->d_name, ".")
+                    && strcmp(dirent->d_name, "..")
+                    && strcmp(dirent->d_name, "0")) {
+                    char existing_media[PATH_MAX];
+                    snprintf(existing_media, PATH_MAX, "%s%s",
+                             android_media_dir.path, dirent->d_name);
+                    char new_media[PATH_MAX];
+                    snprintf(new_media, PATH_MAX, "%s/%s",
+                             owner_media_dir, dirent->d_name);
+                    if (rename(existing_media, new_media) == -1) {
+                        ALOGE("Failed to move existing media from: %s to :%s with error %s",
+                              existing_media, new_media, strerror(errno));
+                        goto fail;
+                    }
+                }
             }
         }
 
         // Ensure media directories for any existing users
-        DIR *dir;
-        struct dirent *dirent;
         char user_media_dir[PATH_MAX];
 
         dir = opendir(user_data_dir);
