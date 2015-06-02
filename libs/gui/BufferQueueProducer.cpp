@@ -837,7 +837,6 @@ status_t BufferQueueProducer::connect(const sp<IProducerListener>& listener,
     mCore->mBufferHasBeenQueued = false;
     mCore->mDequeueBufferCannotBlock =
             mCore->mConsumerControlledByApp && producerControlledByApp;
-    mCore->mAllowAllocation = true;
 
     return status;
 }
