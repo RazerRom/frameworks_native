@@ -123,10 +123,6 @@ status_t GraphicBufferAllocator::alloc(uint32_t w, uint32_t h,
             w, h, format, usage, bufferSize, err, strerror(-err));
 #else
     err = mAllocDev->alloc(mAllocDev, w, h, format, usage, handle, stride);
-
-    // Filter out any usage bits that should not be passed to the gralloc module
-    usage &= GRALLOC_USAGE_ALLOC_MASK;
-
     ALOGW_IF(err, "alloc(%u, %u, %d, %08x, ...) failed %d (%s)",
             w, h, format, usage, err, strerror(-err));
 #endif
